@@ -29,22 +29,22 @@ You can run the tool using `npx ts-node src/index.ts`.
 
 ### 1. Join AVI files in a directory
 ```bash
-npx ts-node src/index.ts join ./my-videos -o full_session.mp4
+npx ts-node src/index.ts join ./data -o ./full_session.mp4
 ```
 
 ### 2. Convert to YouTube format
 ```bash
-npx ts-node src/index.ts convert flight1.avi
+npx ts-node src/index.ts convert ./full_session.mp4
 ```
 
-### 3. Strip audio
+### 3. Strip audio (not needed, just use step 4)
 ```bash
-npx ts-node src/index.ts audio flight1.mp4
+npx ts-node src/index.ts audio ./full_session.mp4
 ```
 
 ### 4. Replace audio with music
 ```bash
-npx ts-node src/index.ts audio flight1.mp4 -r music.mp3
+npx ts-node src/index.ts audio ./full_session.mp4 -r ./music/music.mp3
 ```
 
 ## Developer notes

@@ -56,9 +56,6 @@ export async function processAudio(input: string, output: string, audioFiles?: s
         if (!audioFiles || audioFiles.length === 0) {
             command.noAudio();
         } else {
-            // Remove original audio
-            command.noAudio();
-
             // Add new audio files
             audioFiles.forEach(audio => {
                 command.input(audio);
