@@ -58,7 +58,7 @@ export async function processAudio(input: string, output: string, audioFiles?: s
         } else {
             // Add new audio files
             audioFiles.forEach(audio => {
-                command.input(audio);
+                command.input(audio).inputOptions(['-stream_loop', '-1']);
             });
 
             // For simplicity, we'll just use the first audio file and loop it or truncate it
