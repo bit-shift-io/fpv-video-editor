@@ -1,10 +1,18 @@
 #!/usr/bin/env ts-node
 import { Command } from 'commander';
-import { select, input, Separator } from '@inquirer/prompts';
+import { select, input, checkbox, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
 import { joinVideos, convertToYouTube, processAudio } from './video-processor';
+import {
+    getCollection,
+    setCollection,
+    addToCollection,
+    clearCollection,
+    listVideoFiles,
+    listSubdirectories,
+} from './collection';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -13,13 +21,26 @@ function printBanner() {
     console.log(chalk.dim('  ─────────────────────────────\n'));
 }
 
+function printCollectionStatus() {
+    const count = getCollection().length;
+    if (count === 0) {
+        console.log(chalk.dim('  📋  No videos in working collection\n'));
+    } else {
+        console.log(chalk.yellow(`  📋  ${count} video${count === 1 ? '' : 's'} in working collection\n`));
+    }
+}
+
 // ─── Actions (shared between interactive & CLI modes) ────────────────────────
 
-async function runJoin(directory: string, output: string) {
+async function runJoin(directoryOrFiles: string | string[], output: string) {
     const spinner = ora(chalk.blue('Joining videos...')).start();
     try {
         const outputPath = path.resolve(output);
-        await joinVideos(path.resolve(directory), outputPath);
+        if (typeof directoryOrFiles === 'string') {
+            await joinVideos(path.resolve(directoryOrFiles), outputPath);
+        } else {
+            await joinVideos(directoryOrFiles, outputPath);
+        }
         spinner.succeed(chalk.green(`Successfully joined videos into ${outputPath}`));
     } catch (error: any) {
         spinner.fail(chalk.red(`Failed to join videos: ${error.message}`));
@@ -29,7 +50,7 @@ async function runJoin(directory: string, output: string) {
 async function runConvert(file: string, output?: string) {
     const inputPath = path.resolve(file);
     const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + '_yt.mp4');
-    const spinner = ora(chalk.blue(`Converting ${file} to YouTube format...`)).start();
+    const spinner = ora(chalk.blue(`Converting ${path.basename(file)} to YouTube format...`)).start();
     try {
         await convertToYouTube(inputPath, outputPath);
         spinner.succeed(chalk.green(`Successfully converted to ${outputPath}`));
@@ -42,7 +63,7 @@ async function runAudio(file: string, output?: string, replace?: string[]) {
     const inputPath = path.resolve(file);
     const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + '_processed.mp4');
     const action = replace && replace.length > 0 ? 'Replacing audio' : 'Stripping audio';
-    const spinner = ora(chalk.blue(`${action} in ${file}...`)).start();
+    const spinner = ora(chalk.blue(`${action} in ${path.basename(file)}...`)).start();
     try {
         await processAudio(inputPath, outputPath, replace);
         spinner.succeed(chalk.green(`Successfully processed audio into ${outputPath}`));
@@ -51,36 +72,183 @@ async function runAudio(file: string, output?: string, replace?: string[]) {
     }
 }
 
+// ─── Browse & pick videos ─────────────────────────────────────────────────────
+
+async function browseAndPickVideos() {
+    let currentDir = process.cwd();
+
+    while (true) {
+        const subdirs = listSubdirectories(currentDir);
+        const videoFiles = listVideoFiles(currentDir);
+
+        type Choice = { name: string; value: string };
+        const choices: (Choice | typeof Separator.prototype)[] = [];
+
+        // Navigation: go up
+        const parentDir = path.dirname(currentDir);
+        if (parentDir !== currentDir) {
+            choices.push({ name: chalk.dim('⬆   .. (go up)'), value: '__UP__' });
+        }
+
+        if (subdirs.length > 0) {
+            choices.push(new Separator(chalk.dim('── Directories ──')));
+            for (const d of subdirs) {
+                choices.push({ name: `📁  ${path.basename(d)}`, value: `__DIR__:${d}` });
+            }
+        }
+
+        if (videoFiles.length > 0) {
+            choices.push(new Separator(chalk.dim('── Video Files ──')));
+            choices.push({ name: chalk.green('✅  Select all files here'), value: '__ALL__' });
+            for (const f of videoFiles) {
+                const isSelected = getCollection().includes(f);
+                const indicator = isSelected ? chalk.yellow(' ★') : '';
+                choices.push({ name: `🎞   ${path.basename(f)}${indicator}`, value: f });
+            }
+        }
+
+        if (choices.length === 0) {
+            console.log(chalk.dim('  (empty directory)'));
+            return;
+        }
+
+        choices.push(new Separator());
+        choices.push({ name: chalk.dim('🔙  Done picking'), value: '__DONE__' });
+
+        console.log(chalk.dim(`\n  📂  ${currentDir}`));
+        const picked = await select({
+            message: 'Navigate or pick files:',
+            choices: choices as any,
+            pageSize: 20,
+        });
+
+        if (picked === '__DONE__') {
+            break;
+        } else if (picked === '__UP__') {
+            currentDir = parentDir;
+        } else if (typeof picked === 'string' && picked.startsWith('__DIR__:')) {
+            currentDir = picked.slice('__DIR__:'.length);
+        } else if (picked === '__ALL__') {
+            addToCollection(videoFiles);
+            console.log(chalk.green(`  ✔  Added ${videoFiles.length} file(s) from this directory.`));
+        } else {
+            // Single file
+            addToCollection([picked as string]);
+            console.log(chalk.green(`  ✔  Added ${path.basename(picked as string)} to collection.`));
+        }
+    }
+}
+
 // ─── Interactive prompts ──────────────────────────────────────────────────────
 
 async function promptJoin() {
-    const directory = await input({
-        message: 'Directory containing AVI files:',
-        validate: (v) => v.trim() !== '' || 'Directory is required',
-    });
+    const collection = getCollection();
+
+    let filesToJoin: string[];
+    if (collection.length > 0) {
+        const useCollection = await select({
+            message: `Use working collection (${collection.length} file${collection.length === 1 ? '' : 's'})?`,
+            choices: [
+                { name: '✅  Yes – use collection', value: 'collection' },
+                { name: '📂  No – pick a directory instead', value: 'directory' },
+            ],
+        });
+
+        if (useCollection === 'collection') {
+            filesToJoin = collection;
+        } else {
+            const directory = await input({
+                message: 'Directory containing video files:',
+                validate: (v) => v.trim() !== '' || 'Directory is required',
+            });
+            const output = await input({
+                message: 'Output filename:',
+                default: 'joined_video.mp4',
+            });
+            await runJoin(directory, output);
+            return;
+        }
+    } else {
+        const directory = await input({
+            message: 'Directory containing AVI files:',
+            validate: (v) => v.trim() !== '' || 'Directory is required',
+        });
+        const output = await input({
+            message: 'Output filename:',
+            default: 'joined_video.mp4',
+        });
+        await runJoin(directory, output);
+        return;
+    }
+
     const output = await input({
         message: 'Output filename:',
         default: 'joined_video.mp4',
     });
-    await runJoin(directory, output);
+    await runJoin(filesToJoin, output);
 }
 
 async function promptConvert() {
-    const file = await input({
-        message: 'Input video file:',
-        validate: (v) => v.trim() !== '' || 'File is required',
-    });
-    const output = await input({
-        message: 'Output filename (leave blank for auto):',
-    });
+    const collection = getCollection();
+    let file: string;
+
+    if (collection.length > 0) {
+        const choice = await select({
+            message: 'Which file would you like to convert?',
+            choices: [
+                ...collection.map(f => ({ name: path.basename(f), value: f })),
+                new Separator(),
+                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
+            ] as any,
+        });
+
+        if (choice === '__MANUAL__') {
+            file = await input({
+                message: 'Input video file:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+        } else {
+            file = choice as string;
+        }
+    } else {
+        file = await input({
+            message: 'Input video file:',
+            validate: (v) => v.trim() !== '' || 'File is required',
+        });
+    }
+
+    const output = await input({ message: 'Output filename (leave blank for auto):' });
     await runConvert(file, output || undefined);
 }
 
 async function promptAudio() {
-    const file = await input({
-        message: 'Input video file:',
-        validate: (v) => v.trim() !== '' || 'File is required',
-    });
+    const collection = getCollection();
+    let file: string;
+
+    if (collection.length > 0) {
+        const choice = await select({
+            message: 'Which file would you like to process?',
+            choices: [
+                ...collection.map(f => ({ name: path.basename(f), value: f })),
+                new Separator(),
+                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
+            ] as any,
+        });
+
+        if (choice === '__MANUAL__') {
+            file = await input({
+                message: 'Input video file:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+        } else {
+            file = choice as string;
+        }
+    } else {
+        file = await input({
+            message: 'Input video file:',
+            validate: (v) => v.trim() !== '' || 'File is required',
+        });
+    }
 
     const mode = await select({
         message: 'What would you like to do?',
@@ -99,10 +267,7 @@ async function promptAudio() {
         replace = audioFiles.split(',').map((s: string) => s.trim()).filter(Boolean);
     }
 
-    const output = await input({
-        message: 'Output filename (leave blank for auto):',
-    });
-
+    const output = await input({ message: 'Output filename (leave blank for auto):' });
     await runAudio(file, output || undefined, replace);
 }
 
@@ -112,15 +277,28 @@ async function interactiveMode() {
     printBanner();
 
     while (true) {
+        printCollectionStatus();
+
+        const collection = getCollection();
+        const choices: any[] = [
+            { name: '📁  Browse & pick videos', value: 'browse' },
+            new Separator(),
+            { name: '📂  Join videos', value: 'join' },
+            { name: '▶️   Convert to YouTube format', value: 'convert' },
+            { name: '🔇  Strip / replace audio', value: 'audio' },
+        ];
+
+        if (collection.length > 0) {
+            choices.push(new Separator());
+            choices.push({ name: chalk.red('🗑️   Clear working collection'), value: 'clear' });
+        }
+
+        choices.push(new Separator());
+        choices.push({ name: '🚪  Exit', value: 'exit' });
+
         const action = await select({
             message: 'What would you like to do?',
-            choices: [
-                { name: '📂  Join AVI files in a directory', value: 'join' },
-                { name: '▶️   Convert video to YouTube format', value: 'convert' },
-                { name: '🔇  Strip / replace audio', value: 'audio' },
-                new Separator(),
-                { name: '🚪  Exit', value: 'exit' },
-            ],
+            choices,
         });
 
         if (action === 'exit') {
@@ -130,9 +308,14 @@ async function interactiveMode() {
 
         console.log();
 
-        if (action === 'join') await promptJoin();
+        if (action === 'browse') await browseAndPickVideos();
+        else if (action === 'join') await promptJoin();
         else if (action === 'convert') await promptConvert();
         else if (action === 'audio') await promptAudio();
+        else if (action === 'clear') {
+            clearCollection();
+            console.log(chalk.yellow('  🗑️  Working collection cleared.'));
+        }
 
         console.log();
     }

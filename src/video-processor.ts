@@ -3,16 +3,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Joins all AVI files in a directory into a single MP4 file.
+ * Joins video files into a single MP4.
+ * Pass an explicit `files` array (from the working collection), or a `directory`
+ * path to auto-discover AVI files inside it.
  */
-export async function joinVideos(directory: string, output: string): Promise<void> {
-    const files = fs.readdirSync(directory)
-        .filter(file => file.toLowerCase().endsWith('.avi'))
-        .sort()
-        .map(file => path.join(directory, file));
+export async function joinVideos(directoryOrFiles: string | string[], output: string): Promise<void> {
+    let files: string[];
 
-    if (files.length === 0) {
-        throw new Error('No AVI files found in directory');
+    if (Array.isArray(directoryOrFiles)) {
+        files = directoryOrFiles;
+        if (files.length === 0) throw new Error('No files provided to join');
+    } else {
+        files = fs.readdirSync(directoryOrFiles)
+            .filter(file => file.toLowerCase().endsWith('.avi'))
+            .sort()
+            .map(file => path.join(directoryOrFiles, file));
+        if (files.length === 0) throw new Error('No AVI files found in directory');
     }
 
     return new Promise((resolve, reject) => {
