@@ -81,3 +81,25 @@ export async function processAudio(input: string, output: string, audioFiles?: s
             .save(output);
     });
 }
+
+/**
+ * Extracts a sub-clip from a video between startTime and endTime.
+ * Uses stream-copy (-c copy) for a fast, lossless extraction.
+ *
+ * Times can be in seconds or any format ffmpeg accepts (e.g. "HH:MM:SS").
+ */
+export async function extractClip(
+    input: string,
+    startTime: string,
+    endTime: string,
+    output: string
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        (ffmpeg(input) as any)
+            .inputOptions([`-ss ${startTime}`, `-to ${endTime}`])
+            .outputOptions(['-c copy'])
+            .on('error', (err: any) => reject(new Error(err)))
+            .on('end', () => resolve())
+            .save(output);
+    });
+}

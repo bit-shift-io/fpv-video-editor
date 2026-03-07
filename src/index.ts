@@ -4,7 +4,7 @@ import { select, input, checkbox, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
-import { joinVideos, convertToYouTube, processAudio } from './video-processor';
+import { joinVideos, convertToYouTube, processAudio, extractClip } from './video-processor';
 import {
     getCollection,
     setCollection,
@@ -56,6 +56,27 @@ async function runConvert(file: string, output?: string) {
         spinner.succeed(chalk.green(`Successfully converted to ${outputPath}`));
     } catch (error: any) {
         spinner.fail(chalk.red(`Conversion failed: ${error.message}`));
+    }
+}
+
+function timeToFilePart(t: string): string {
+    // Replace colons with hyphens so the time is safe in filenames (e.g. 00:01:30 -> 00-01-30)
+    return t.replace(/:/g, '-');
+}
+
+async function runExtract(file: string, startTime: string, endTime: string, output?: string) {
+    const inputPath = path.resolve(file);
+    const ext = path.extname(file) || '.mp4';
+    const base = path.basename(file, ext);
+    const dir = path.dirname(inputPath);
+    const autoName = `${base}_${timeToFilePart(startTime)}_${timeToFilePart(endTime)}${ext}`;
+    const outputPath = path.resolve(output || path.join(dir, autoName));
+    const spinner = ora(chalk.blue(`Extracting ${startTime} → ${endTime} from ${path.basename(file)}...`)).start();
+    try {
+        await extractClip(inputPath, startTime, endTime, outputPath);
+        spinner.succeed(chalk.green(`Clip saved to ${outputPath}`));
+    } catch (error: any) {
+        spinner.fail(chalk.red(`Extraction failed: ${error.message}`));
     }
 }
 
@@ -271,6 +292,60 @@ async function promptAudio() {
     await runAudio(file, output || undefined, replace);
 }
 
+function validateTime(v: string): true | string {
+    // Accept HH:MM:SS, MM:SS, or plain seconds (integers / decimals)
+    if (/^\d+(\.\d+)?$/.test(v.trim())) return true;
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())) return true;
+    return 'Enter a valid time: HH:MM:SS, MM:SS, or seconds (e.g. 90)';
+}
+
+async function promptExtract() {
+    const collection = getCollection();
+    let file: string;
+
+    if (collection.length > 0) {
+        const choice = await select({
+            message: 'Which file would you like to extract from?',
+            choices: [
+                ...collection.map(f => ({ name: path.basename(f), value: f })),
+                new Separator(),
+                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
+            ] as any,
+        });
+
+        if (choice === '__MANUAL__') {
+            file = await input({
+                message: 'Input video file:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+        } else {
+            file = choice as string;
+        }
+    } else {
+        file = await input({
+            message: 'Input video file:',
+            validate: (v) => v.trim() !== '' || 'File is required',
+        });
+    }
+
+    const startTime = await input({
+        message: 'Start time (HH:MM:SS, MM:SS, or seconds):',
+        validate: validateTime,
+    });
+
+    const endTime = await input({
+        message: 'End time   (HH:MM:SS, MM:SS, or seconds):',
+        validate: (v) => {
+            const basic = validateTime(v);
+            if (basic !== true) return basic;
+            return true; // further range check is left to ffmpeg
+        },
+    });
+
+    const output = await input({ message: 'Output filename (leave blank for auto):' });
+    await runExtract(file, startTime, endTime, output || undefined);
+}
+
 // ─── Main interactive loop ────────────────────────────────────────────────────
 
 async function interactiveMode() {
@@ -284,6 +359,7 @@ async function interactiveMode() {
             { name: '📁  Browse & pick videos', value: 'browse' },
             new Separator(),
             { name: '📂  Join videos', value: 'join' },
+            { name: '✂️   Extract clip', value: 'extract' },
             { name: '▶️   Convert to YouTube format', value: 'convert' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
         ];
@@ -310,6 +386,7 @@ async function interactiveMode() {
 
         if (action === 'browse') await browseAndPickVideos();
         else if (action === 'join') await promptJoin();
+        else if (action === 'extract') await promptExtract();
         else if (action === 'convert') await promptConvert();
         else if (action === 'audio') await promptAudio();
         else if (action === 'clear') {
@@ -346,6 +423,17 @@ program
     .option('-o, --output <filename>', 'Output filename')
     .action(async (file, options) => {
         await runConvert(file, options.output);
+    });
+
+program
+    .command('extract')
+    .description('Extract a sub-clip between a start and end time')
+    .argument('<file>', 'Input video file')
+    .argument('<start>', 'Start time (HH:MM:SS, MM:SS, or seconds)')
+    .argument('<end>', 'End time   (HH:MM:SS, MM:SS, or seconds)')
+    .option('-o, --output <filename>', 'Output filename (default: auto-named)')
+    .action(async (file, start, end, options) => {
+        await runExtract(file, start, end, options.output);
     });
 
 program
