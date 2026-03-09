@@ -4,7 +4,7 @@ import { select, input, checkbox, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
-import { joinVideos, convertToYouTube, processAudio, extractClip } from './video-processor';
+import { joinVideos, convertToYouTube, processAudio, extractClip, changeSpeed } from './video-processor';
 import {
     getCollection,
     setCollection,
@@ -90,6 +90,19 @@ async function runAudio(file: string, output?: string, replace?: string[]) {
         spinner.succeed(chalk.green(`Successfully processed audio into ${outputPath}`));
     } catch (error: any) {
         spinner.fail(chalk.red(`Audio processing failed: ${error.message}`));
+    }
+}
+
+async function runSpeed(file: string, speed: number, output?: string) {
+    const inputPath = path.resolve(file);
+    const suffix = speed < 1.0 ? '_slow' : '_fast';
+    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + suffix + '.mp4');
+    const spinner = ora(chalk.blue(`Changing playback speed of ${path.basename(file)} to ${speed}x...`)).start();
+    try {
+        await changeSpeed(inputPath, outputPath, speed);
+        spinner.succeed(chalk.green(`Successfully changed speed into ${outputPath}`));
+    } catch (error: any) {
+        spinner.fail(chalk.red(`Speed modification failed: ${error.message}`));
     }
 }
 
@@ -346,6 +359,49 @@ async function promptExtract() {
     await runExtract(file, startTime, endTime, output || undefined);
 }
 
+async function promptSpeed() {
+    const collection = getCollection();
+    let file: string;
+
+    if (collection.length > 0) {
+        const choice = await select({
+            message: 'Which file would you like to modify?',
+            choices: [
+                ...collection.map(f => ({ name: path.basename(f), value: f })),
+                new Separator(),
+                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
+            ] as any,
+        });
+
+        if (choice === '__MANUAL__') {
+            file = await input({
+                message: 'Input video file:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+        } else {
+            file = choice as string;
+        }
+    } else {
+        file = await input({
+            message: 'Input video file:',
+            validate: (v) => v.trim() !== '' || 'File is required',
+        });
+    }
+
+    const speedStr = await input({
+        message: 'Playback speed (e.g. 0.5 for half speed, 2.0 for double speed):',
+        validate: (v) => {
+            const n = parseFloat(v);
+            if (isNaN(n) || n <= 0) return 'Please enter a speed greater than 0';
+            return true;
+        },
+    });
+    const speed = parseFloat(speedStr);
+
+    const output = await input({ message: 'Output filename (leave blank for auto):' });
+    await runSpeed(file, speed, output || undefined);
+}
+
 // ─── Main interactive loop ────────────────────────────────────────────────────
 
 async function interactiveMode() {
@@ -360,6 +416,7 @@ async function interactiveMode() {
             new Separator(),
             { name: '📂  Join videos', value: 'join' },
             { name: '✂️   Extract clip', value: 'extract' },
+            { name: '⏩  Modify playback speed', value: 'speed' },
             { name: '▶️   Convert to YouTube format', value: 'convert' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
         ];
@@ -387,6 +444,7 @@ async function interactiveMode() {
         if (action === 'browse') await browseAndPickVideos();
         else if (action === 'join') await promptJoin();
         else if (action === 'extract') await promptExtract();
+        else if (action === 'speed') await promptSpeed();
         else if (action === 'convert') await promptConvert();
         else if (action === 'audio') await promptAudio();
         else if (action === 'clear') {
@@ -444,6 +502,16 @@ program
     .option('-r, --replace <music...>', 'Replace with these audio file(s)')
     .action(async (file, options) => {
         await runAudio(file, options.output, options.replace);
+    });
+
+program
+    .command('speed')
+    .description('Change playback speed of a video')
+    .argument('<file>', 'Input video file')
+    .argument('<factor>', 'Speed factor (e.g. 0.5, 2.0)')
+    .option('-o, --output <filename>', 'Output filename')
+    .action(async (file, factor, options) => {
+        await runSpeed(file, parseFloat(factor), options.output);
     });
 
 // ─── Entry point ─────────────────────────────────────────────────────────────

@@ -103,3 +103,42 @@ export async function extractClip(
             .save(output);
     });
 }
+
+/**
+ * Changes the playback speed of a video.
+ * speed > 1.0 is faster, speed < 1.0 is slower (slow motion).
+ */
+export async function changeSpeed(
+    input: string,
+    output: string,
+    speed: number
+): Promise<void> {
+    if (speed <= 0) throw new Error('Speed must be greater than 0');
+
+    return new Promise((resolve, reject) => {
+        // Video filter: setpts = (1/speed)*PTS
+        const videoFilter = `setpts=${(1 / speed).toFixed(4)}*PTS`;
+
+        // Audio filter: atempo (must be between 0.5 and 2.0)
+        // If outside this range, we need to chain atempo filters.
+        const audioFilters: string[] = [];
+        let tempSpeed = speed;
+        while (tempSpeed > 2.0) {
+            audioFilters.push('atempo=2.0');
+            tempSpeed /= 2.0;
+        }
+        while (tempSpeed < 0.5) {
+            audioFilters.push('atempo=0.5');
+            tempSpeed /= 0.5;
+        }
+        audioFilters.push(`atempo=${tempSpeed.toFixed(4)}`);
+        const audioFilter = audioFilters.join(',');
+
+        (ffmpeg(input) as any)
+            .videoFilters(videoFilter)
+            .audioFilters(audioFilter)
+            .on('error', (err: any) => reject(new Error(err)))
+            .on('end', () => resolve())
+            .save(output);
+    });
+}
