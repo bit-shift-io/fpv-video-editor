@@ -4,8 +4,7 @@ import * as path from 'path';
 
 /**
  * Joins video files into a single MP4.
- * Pass an explicit `files` array (from the working collection), or a `directory`
- * path to auto-discover AVI files inside it.
+ * Uses the FFmpeg 'concat' demuxer for a near-instant, lossless join (stream copy).
  */
 export async function joinVideos(directoryOrFiles: string | string[], output: string): Promise<void> {
     let files: string[];
@@ -15,20 +14,31 @@ export async function joinVideos(directoryOrFiles: string | string[], output: st
         if (files.length === 0) throw new Error('No files provided to join');
     } else {
         files = fs.readdirSync(directoryOrFiles)
-            .filter(file => file.toLowerCase().endsWith('.avi'))
+            .filter(file => file.toLowerCase().endsWith('.avi') || file.toLowerCase().endsWith('.mp4'))
             .sort()
             .map(file => path.join(directoryOrFiles, file));
-        if (files.length === 0) throw new Error('No AVI files found in directory');
+        if (files.length === 0) throw new Error('No compatible video files found in directory');
     }
 
-    return new Promise((resolve, reject) => {
-        const command = ffmpeg();
-        files.forEach(file => command.input(file));
+    // FFmpeg concat demuxer requires a text file listing input paths
+    const listPath = path.join('/tmp', `ffmpeg_concat_${Date.now()}.txt`);
+    const listContent = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+    fs.writeFileSync(listPath, listContent);
 
-        (command as any)
-            .on('error', (err: any) => reject(new Error(err)))
-            .on('end', () => resolve())
-            .mergeToFile(output, '/tmp/');
+    return new Promise((resolve, reject) => {
+        ffmpeg()
+            .input(listPath)
+            .inputOptions(['-f concat', '-safe 0'])
+            .outputOptions(['-c copy'])
+            .on('error', (err: any) => {
+                if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+                reject(new Error(err));
+            })
+            .on('end', () => {
+                if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+                resolve();
+            })
+            .save(output);
     });
 }
 
@@ -137,6 +147,8 @@ export async function changeSpeed(
         (ffmpeg(input) as any)
             .videoFilters(videoFilter)
             .audioFilters(audioFilter)
+            .videoCodec('mpeg4')
+            .audioCodec('libmp3lame')
             .on('error', (err: any) => reject(new Error(err)))
             .on('end', () => resolve())
             .save(output);

@@ -96,7 +96,7 @@ async function runAudio(file: string, output?: string, replace?: string[]) {
 async function runSpeed(file: string, speed: number, output?: string) {
     const inputPath = path.resolve(file);
     const suffix = speed < 1.0 ? '_slow' : '_fast';
-    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + suffix + '.mp4');
+    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + suffix + '.avi');
     const spinner = ora(chalk.blue(`Changing playback speed of ${path.basename(file)} to ${speed}x...`)).start();
     try {
         await changeSpeed(inputPath, outputPath, speed);
@@ -197,7 +197,7 @@ async function promptJoin() {
             });
             const output = await input({
                 message: 'Output filename:',
-                default: 'joined_video.mp4',
+                default: 'joined_video.avi',
             });
             await runJoin(directory, output);
             return;
@@ -209,7 +209,7 @@ async function promptJoin() {
         });
         const output = await input({
             message: 'Output filename:',
-            default: 'joined_video.mp4',
+            default: 'joined_video.avi',
         });
         await runJoin(directory, output);
         return;
@@ -217,7 +217,7 @@ async function promptJoin() {
 
     const output = await input({
         message: 'Output filename:',
-        default: 'joined_video.mp4',
+        default: 'joined_video.avi',
     });
     await runJoin(filesToJoin, output);
 }
@@ -469,7 +469,7 @@ program
     .command('join')
     .description('Join all AVI files in a directory into a single file')
     .argument('<directory>', 'Directory containing AVI files')
-    .option('-o, --output <filename>', 'Output filename', 'joined_video.mp4')
+    .option('-o, --output <filename>', 'Output filename', 'joined_video.avi')
     .action(async (directory, options) => {
         await runJoin(directory, options.output);
     });
