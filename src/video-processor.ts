@@ -20,9 +20,11 @@ export async function joinVideos(directoryOrFiles: string | string[], output: st
         if (files.length === 0) throw new Error('No compatible video files found in directory');
     }
 
-    // FFmpeg concat demuxer requires a text file listing input paths
+    // FFmpeg concat demuxer requires a text file listing input paths.
+    // We use absolute paths to ensure ffmpeg can find the files regardless of where the list file is.
     const listPath = path.join('/tmp', `ffmpeg_concat_${Date.now()}.txt`);
-    const listContent = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+    const absoluteFiles = files.map(f => path.resolve(f));
+    const listContent = absoluteFiles.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
     fs.writeFileSync(listPath, listContent);
 
     return new Promise((resolve, reject) => {
@@ -86,9 +88,16 @@ export async function processAudio(input: string, output: string, audioFiles?: s
         }
 
         command
+            // Use MJPEG and PCM for consistency and speed (AVI format)
+            .videoCodec('mjpeg')
             .on('error', (err: any) => reject(new Error(err)))
-            .on('end', () => resolve())
-            .save(output);
+            .on('end', () => resolve());
+
+        if (audioFiles && audioFiles.length > 0) {
+            command.audioCodec('pcm_s16le');
+        }
+
+        command.save(output);
     });
 }
 
@@ -126,8 +135,9 @@ export async function changeSpeed(
     if (speed <= 0) throw new Error('Speed must be greater than 0');
 
     return new Promise((resolve, reject) => {
-        // Video filter: setpts = (1/speed)*PTS
-        const videoFilter = `setpts=${(1 / speed).toFixed(4)}*PTS`;
+        // Video filter: setpts = (1/speed)*(PTS-STARTPTS)
+        // Normalizing PTS ensures the output starts at time 0.
+        const videoFilter = `setpts=${(1 / speed).toFixed(4)}*(PTS-STARTPTS)`;
 
         // Audio filter: atempo (must be between 0.5 and 2.0)
         // If outside this range, we need to chain atempo filters.
@@ -147,8 +157,10 @@ export async function changeSpeed(
         (ffmpeg(input) as any)
             .videoFilters(videoFilter)
             .audioFilters(audioFilter)
-            .videoCodec('mpeg4')
-            .audioCodec('libmp3lame')
+            // Use MJPEG and PCM for compatibility with the original FPV AVI files
+            // This allows the 'join' command (which uses stream copy) to work correctly.
+            .videoCodec('mjpeg')
+            .audioCodec('pcm_s16le')
             .on('error', (err: any) => reject(new Error(err)))
             .on('end', () => resolve())
             .save(output);

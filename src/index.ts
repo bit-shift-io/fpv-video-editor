@@ -82,7 +82,7 @@ async function runExtract(file: string, startTime: string, endTime: string, outp
 
 async function runAudio(file: string, output?: string, replace?: string[]) {
     const inputPath = path.resolve(file);
-    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + '_processed.mp4');
+    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + '_processed.avi');
     const action = replace && replace.length > 0 ? 'Replacing audio' : 'Stripping audio';
     const spinner = ora(chalk.blue(`${action} in ${path.basename(file)}...`)).start();
     try {
