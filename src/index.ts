@@ -417,8 +417,8 @@ async function interactiveMode() {
             { name: '📂  Join videos', value: 'join' },
             { name: '✂️   Extract clip', value: 'extract' },
             { name: '⏩  Modify playback speed', value: 'speed' },
-            { name: '▶️   Convert to YouTube format', value: 'convert' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
+            { name: '▶️   Convert to YouTube format', value: 'convert' },
         ];
 
         if (collection.length > 0) {

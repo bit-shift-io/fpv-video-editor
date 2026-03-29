@@ -113,10 +113,23 @@ export async function extractClip(
     endTime: string,
     output: string
 ): Promise<void> {
+    // Convert times to seconds for duration calculation
+    const parseTime = (time: string): number => {
+        const parts = time.split(':').map(Number);
+        if (parts.length === 1) return parts[0];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        return 0;
+    };
+
+    const startSec = parseTime(startTime);
+    const endSec = parseTime(endTime);
+    const duration = endSec - startSec;
+
     return new Promise((resolve, reject) => {
         (ffmpeg(input) as any)
-            .inputOptions([`-ss ${startTime}`, `-to ${endTime}`])
-            .outputOptions(['-c copy'])
+            .inputOptions([`-ss ${startTime}`])
+            .outputOptions([`-t ${duration}`, '-c copy'])
             .on('error', (err: any) => reject(new Error(err)))
             .on('end', () => resolve())
             .save(output);
