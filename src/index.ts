@@ -4,7 +4,7 @@ import { select, input, checkbox, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
-import { joinVideos, convertToYouTube, processAudio, extractClip, changeSpeed } from './video-processor';
+import { joinVideos, convertToYouTube, processAudio, extractClip, changeSpeed, imageToVideo } from './video-processor';
 import {
     getCollection,
     setCollection,
@@ -103,6 +103,22 @@ async function runSpeed(file: string, speed: number, output?: string) {
         spinner.succeed(chalk.green(`Successfully changed speed into ${outputPath}`));
     } catch (error: any) {
         spinner.fail(chalk.red(`Speed modification failed: ${error.message}`));
+    }
+}
+
+async function runImageToVideo(file: string, duration: number, output?: string) {
+    const inputPath = path.resolve(file);
+    const ext = path.extname(file) || '.mp4';
+    const base = path.basename(file, ext);
+    const dir = path.dirname(inputPath);
+    const autoName = `${base}_${duration}s${ext.replace(/\.[^/.]+$/, '')}.mp4`;
+    const outputPath = path.resolve(output || path.join(dir, autoName));
+    const spinner = ora(chalk.blue(`Creating ${duration}s video from ${path.basename(file)}...`)).start();
+    try {
+        await imageToVideo(inputPath, duration, outputPath);
+        spinner.succeed(chalk.green(`Video created at ${outputPath}`));
+    } catch (error: any) {
+        spinner.fail(chalk.red(`Video creation failed: ${error.message}`));
     }
 }
 
@@ -402,6 +418,26 @@ async function promptSpeed() {
     await runSpeed(file, speed, output || undefined);
 }
 
+async function promptImageToVideo() {
+    const file = await input({
+        message: 'Image file (PNG or JPEG):',
+        validate: (v) => v.trim() !== '' || 'File is required',
+    });
+
+    const durationStr = await input({
+        message: 'Video duration in seconds (e.g. 5, 10.5):',
+        validate: (v) => {
+            const n = parseFloat(v);
+            if (isNaN(n) || n <= 0) return 'Please enter a duration greater than 0';
+            return true;
+        },
+    });
+    const duration = parseFloat(durationStr);
+
+    const output = await input({ message: 'Output filename (leave blank for auto):' });
+    await runImageToVideo(file, duration, output || undefined);
+}
+
 // ─── Main interactive loop ────────────────────────────────────────────────────
 
 async function interactiveMode() {
@@ -417,6 +453,7 @@ async function interactiveMode() {
             { name: '📂  Join videos', value: 'join' },
             { name: '✂️   Extract clip', value: 'extract' },
             { name: '⏩  Modify playback speed', value: 'speed' },
+            { name: '🖼️   Create video from image', value: 'image' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
             { name: '▶️   Convert to YouTube format', value: 'convert' },
         ];
@@ -445,6 +482,7 @@ async function interactiveMode() {
         else if (action === 'join') await promptJoin();
         else if (action === 'extract') await promptExtract();
         else if (action === 'speed') await promptSpeed();
+        else if (action === 'image') await promptImageToVideo();
         else if (action === 'convert') await promptConvert();
         else if (action === 'audio') await promptAudio();
         else if (action === 'clear') {
@@ -512,6 +550,16 @@ program
     .option('-o, --output <filename>', 'Output filename')
     .action(async (file, factor, options) => {
         await runSpeed(file, parseFloat(factor), options.output);
+    });
+
+program
+    .command('image')
+    .description('Create a video from a static image (PNG or JPEG)')
+    .argument('<file>', 'Input image file (PNG or JPEG)')
+    .argument('<duration>', 'Duration in seconds (e.g. 5, 10.5)')
+    .option('-o, --output <filename>', 'Output filename')
+    .action(async (file, duration, options) => {
+        await runImageToVideo(file, parseFloat(duration), options.output);
     });
 
 // ─── Entry point ─────────────────────────────────────────────────────────────

@@ -179,3 +179,30 @@ export async function changeSpeed(
             .save(output);
     });
 }
+
+/**
+ * Creates a video from a static image looped for a specified duration.
+ * Supports PNG and JPEG images.
+ */
+export async function imageToVideo(
+    imagePath: string,
+    duration: number,
+    output: string
+): Promise<void> {
+    if (duration <= 0) throw new Error('Duration must be greater than 0');
+
+    return new Promise((resolve, reject) => {
+        (ffmpeg(imagePath) as any)
+            .inputOptions(['-loop 1'])
+            .outputOptions([
+                '-c:v libx264',
+                '-crf 23',
+                '-preset medium',
+                '-pix_fmt yuv420p',
+                `-t ${duration}`
+            ])
+            .on('error', (err: any) => reject(new Error(err)))
+            .on('end', () => resolve())
+            .save(output);
+    });
+}
