@@ -2,11 +2,43 @@ import ffmpeg from 'fluent-ffmpeg';
 import * as fs from 'fs';
 import * as path from 'path';
 
+function probeFile(filePath: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(filePath, (err, data) => err ? reject(err) : resolve(data));
+    });
+}
+
+export interface VideoInfo {
+    width: number;
+    height: number;
+    codecName: string;
+    hasAudio: boolean;
+    duration: number;
+}
+
+export async function getVideoInfo(filePath: string): Promise<VideoInfo> {
+    const data = await probeFile(filePath);
+    const vs = data.streams.find((s: any) => s.codec_type === 'video');
+    return {
+        width: vs?.width ?? 0,
+        height: vs?.height ?? 0,
+        codecName: vs?.codec_name ?? '',
+        hasAudio: data.streams.some((s: any) => s.codec_type === 'audio'),
+        duration: data.format.duration ?? 0,
+    };
+}
+
 /**
- * Joins video files into a single MP4.
- * Uses the FFmpeg 'concat' demuxer for a near-instant, lossless join (stream copy).
+ * Joins video files into a single AVI.
+ * When target is omitted all files must share the same codec and resolution — a fast
+ * stream-copy is used.  When target is provided every clip is scaled and re-encoded,
+ * which handles mixed codecs, resolutions, and audio-less clips (e.g. image-to-video).
  */
-export async function joinVideos(directoryOrFiles: string | string[], output: string): Promise<void> {
+export async function joinVideos(
+    directoryOrFiles: string | string[],
+    output: string,
+    target?: { width: number; height: number },
+): Promise<void> {
     let files: string[];
 
     if (Array.isArray(directoryOrFiles)) {
@@ -20,26 +52,65 @@ export async function joinVideos(directoryOrFiles: string | string[], output: st
         if (files.length === 0) throw new Error('No compatible video files found in directory');
     }
 
-    // FFmpeg concat demuxer requires a text file listing input paths.
-    // We use absolute paths to ensure ffmpeg can find the files regardless of where the list file is.
-    const listPath = path.join('/tmp', `ffmpeg_concat_${Date.now()}.txt`);
     const absoluteFiles = files.map(f => path.resolve(f));
-    const listContent = absoluteFiles.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-    fs.writeFileSync(listPath, listContent);
+
+    if (!target) {
+        // Fast path: stream copy via concat demuxer (all files must be identical format).
+        const listPath = path.join('/tmp', `ffmpeg_concat_${Date.now()}.txt`);
+        const listContent = absoluteFiles.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+        fs.writeFileSync(listPath, listContent);
+
+        return new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(listPath)
+                .inputOptions(['-f concat', '-safe 0'])
+                .outputOptions(['-c copy'])
+                .on('error', (err: any) => {
+                    if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+                    reject(new Error(err));
+                })
+                .on('end', () => {
+                    if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+                    resolve();
+                })
+                .save(output);
+        });
+    }
+
+    // Re-encode path: scale everything to target resolution, synthesise silence where needed.
+    const probes = await Promise.all(absoluteFiles.map(probeFile));
+    const hasAudio = probes.map(p => p.streams.some((s: any) => s.codec_type === 'audio'));
+    const { width: targetW, height: targetH } = target;
 
     return new Promise((resolve, reject) => {
-        ffmpeg()
-            .input(listPath)
-            .inputOptions(['-f concat', '-safe 0'])
-            .outputOptions(['-c copy'])
-            .on('error', (err: any) => {
-                if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
-                reject(new Error(err));
-            })
-            .on('end', () => {
-                if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
-                resolve();
-            })
+        const cmd = ffmpeg() as any;
+        for (const f of absoluteFiles) cmd.input(f);
+
+        const n = absoluteFiles.length;
+        const filterParts: string[] = [];
+        let concatInputs = '';
+
+        for (let i = 0; i < n; i++) {
+            filterParts.push(
+                `[${i}:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,` +
+                `pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`
+            );
+            if (hasAudio[i]) {
+                filterParts.push(`[${i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a${i}]`);
+            } else {
+                const duration = probes[i].format.duration as number;
+                filterParts.push(`aevalsrc=0:c=stereo:s=44100:d=${duration}[a${i}]`);
+            }
+            concatInputs += `[v${i}][a${i}]`;
+        }
+
+        filterParts.push(`${concatInputs}concat=n=${n}:v=1:a=1[outv][outa]`);
+
+        cmd
+            .complexFilter(filterParts.join(';'))
+            .outputOptions(['-map [outv]', '-map [outa]', '-c:v mjpeg', '-c:a pcm_s16le'])
+            .on('error', (err: any) => reject(new Error(err)))
+            .on('end', () => resolve())
             .save(output);
     });
 }
