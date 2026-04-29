@@ -1,33 +1,17 @@
 #!/usr/bin/env ts-node
 import { Command } from 'commander';
-import { select, input, checkbox, Separator } from '@inquirer/prompts';
+import { select, input, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
 import { joinVideos, convertToYouTube, processAudio, extractClip, changeSpeed, imageToVideo } from './video-processor';
-import {
-    getCollection,
-    setCollection,
-    addToCollection,
-    clearCollection,
-    listVideoFiles,
-    listSubdirectories,
-} from './collection';
+import { listVideoFiles, listImageFiles, listSubdirectories } from './collection';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function printBanner() {
     console.log(chalk.cyan.bold('\n  🎬  FPV Video Editor'));
     console.log(chalk.dim('  ─────────────────────────────\n'));
-}
-
-function printCollectionStatus() {
-    const count = getCollection().length;
-    if (count === 0) {
-        console.log(chalk.dim('  📋  No videos in working collection\n'));
-    } else {
-        console.log(chalk.yellow(`  📋  ${count} video${count === 1 ? '' : 's'} in working collection\n`));
-    }
 }
 
 // ─── Actions (shared between interactive & CLI modes) ────────────────────────
@@ -122,69 +106,130 @@ async function runImageToVideo(file: string, duration: number, output?: string) 
     }
 }
 
-// ─── Browse & pick videos ─────────────────────────────────────────────────────
+// ─── File browser helpers ─────────────────────────────────────────────────────
 
-async function browseAndPickVideos() {
+async function browseAndPickFile(
+    message: string,
+    listFiles: (dir: string) => string[],
+    fileIcon = '🎞',
+): Promise<string> {
     let currentDir = process.cwd();
 
     while (true) {
         const subdirs = listSubdirectories(currentDir);
-        const videoFiles = listVideoFiles(currentDir);
-
-        type Choice = { name: string; value: string };
-        const choices: (Choice | typeof Separator.prototype)[] = [];
-
-        // Navigation: go up
+        const files = listFiles(currentDir);
         const parentDir = path.dirname(currentDir);
+        const choices: any[] = [];
+
         if (parentDir !== currentDir) {
             choices.push({ name: chalk.dim('⬆   .. (go up)'), value: '__UP__' });
         }
-
         if (subdirs.length > 0) {
             choices.push(new Separator(chalk.dim('── Directories ──')));
             for (const d of subdirs) {
                 choices.push({ name: `📁  ${path.basename(d)}`, value: `__DIR__:${d}` });
             }
         }
-
-        if (videoFiles.length > 0) {
-            choices.push(new Separator(chalk.dim('── Video Files ──')));
-            choices.push({ name: chalk.green('✅  Select all files here'), value: '__ALL__' });
-            for (const f of videoFiles) {
-                const isSelected = getCollection().includes(f);
-                const indicator = isSelected ? chalk.yellow(' ★') : '';
-                choices.push({ name: `🎞   ${path.basename(f)}${indicator}`, value: f });
+        if (files.length > 0) {
+            choices.push(new Separator(chalk.dim('── Files ──')));
+            for (const f of files) {
+                choices.push({ name: `${fileIcon}   ${path.basename(f)}`, value: f });
             }
         }
-
-        if (choices.length === 0) {
-            console.log(chalk.dim('  (empty directory)'));
-            return;
-        }
-
         choices.push(new Separator());
-        choices.push({ name: chalk.dim('🔙  Done picking'), value: '__DONE__' });
+        choices.push({ name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' });
 
         console.log(chalk.dim(`\n  📂  ${currentDir}`));
-        const picked = await select({
-            message: 'Navigate or pick files:',
-            choices: choices as any,
-            pageSize: 20,
-        });
+        const picked = await select({ message, choices, pageSize: 20 });
+
+        if (picked === '__MANUAL__') {
+            return await input({
+                message: 'File path:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+        } else if (picked === '__UP__') {
+            currentDir = parentDir;
+        } else if (typeof picked === 'string' && picked.startsWith('__DIR__:')) {
+            currentDir = picked.slice('__DIR__:'.length);
+        } else {
+            return picked as string;
+        }
+    }
+}
+
+async function browseAndPickFiles(
+    message: string,
+    listFiles: (dir: string) => string[],
+): Promise<string[]> {
+    let currentDir = process.cwd();
+    const selected: string[] = [];
+
+    while (true) {
+        const subdirs = listSubdirectories(currentDir);
+        const files = listFiles(currentDir);
+        const parentDir = path.dirname(currentDir);
+        const choices: any[] = [];
+
+        if (parentDir !== currentDir) {
+            choices.push({ name: chalk.dim('⬆   .. (go up)'), value: '__UP__' });
+        }
+        if (subdirs.length > 0) {
+            choices.push(new Separator(chalk.dim('── Directories ──')));
+            for (const d of subdirs) {
+                choices.push({ name: `📁  ${path.basename(d)}`, value: `__DIR__:${d}` });
+            }
+        }
+        if (files.length > 0) {
+            choices.push(new Separator(chalk.dim('── Files ──')));
+            choices.push({ name: chalk.green('✅  Add all files here'), value: '__ALL__' });
+            for (const f of files) {
+                const tick = selected.includes(f) ? chalk.yellow(' ★') : '';
+                choices.push({ name: `🎞   ${path.basename(f)}${tick}`, value: f });
+            }
+        }
+        choices.push(new Separator());
+        if (selected.length > 0) {
+            choices.push({
+                name: chalk.green(`🔙  Done (${selected.length} file${selected.length === 1 ? '' : 's'} selected)`),
+                value: '__DONE__',
+            });
+        }
+        choices.push({ name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' });
+
+        console.log(chalk.dim(`\n  📂  ${currentDir}`));
+        const label = selected.length > 0 ? `${message} (${selected.length} selected)` : message;
+        const picked = await select({ message: label, choices, pageSize: 20 });
 
         if (picked === '__DONE__') {
-            break;
+            return selected;
+        } else if (picked === '__MANUAL__') {
+            const manualPath = await input({
+                message: 'File path:',
+                validate: (v) => v.trim() !== '' || 'File is required',
+            });
+            if (!selected.includes(manualPath)) {
+                selected.push(manualPath);
+                console.log(chalk.green(`  ✔  Added ${path.basename(manualPath)}`));
+            }
         } else if (picked === '__UP__') {
             currentDir = parentDir;
         } else if (typeof picked === 'string' && picked.startsWith('__DIR__:')) {
             currentDir = picked.slice('__DIR__:'.length);
         } else if (picked === '__ALL__') {
-            addToCollection(videoFiles);
-            console.log(chalk.green(`  ✔  Added ${videoFiles.length} file(s) from this directory.`));
+            for (const f of files) {
+                if (!selected.includes(f)) selected.push(f);
+            }
+            console.log(chalk.green(`  ✔  Added ${files.length} file(s) from this directory.`));
         } else {
-            // Single file
-            addToCollection([picked as string]);
-            console.log(chalk.green(`  ✔  Added ${path.basename(picked as string)} to collection.`));
+            const f = picked as string;
+            const idx = selected.indexOf(f);
+            if (idx === -1) {
+                selected.push(f);
+                console.log(chalk.green(`  ✔  Added ${path.basename(f)}`));
+            } else {
+                selected.splice(idx, 1);
+                console.log(chalk.yellow(`  ✖  Removed ${path.basename(f)}`));
+            }
         }
     }
 }
@@ -192,113 +237,23 @@ async function browseAndPickVideos() {
 // ─── Interactive prompts ──────────────────────────────────────────────────────
 
 async function promptJoin() {
-    const collection = getCollection();
-
-    let filesToJoin: string[];
-    if (collection.length > 0) {
-        const useCollection = await select({
-            message: `Use working collection (${collection.length} file${collection.length === 1 ? '' : 's'})?`,
-            choices: [
-                { name: '✅  Yes – use collection', value: 'collection' },
-                { name: '📂  No – pick a directory instead', value: 'directory' },
-            ],
-        });
-
-        if (useCollection === 'collection') {
-            filesToJoin = collection;
-        } else {
-            const directory = await input({
-                message: 'Directory containing video files:',
-                validate: (v) => v.trim() !== '' || 'Directory is required',
-            });
-            const output = await input({
-                message: 'Output filename:',
-                default: 'joined_video.avi',
-            });
-            await runJoin(directory, output);
-            return;
-        }
-    } else {
-        const directory = await input({
-            message: 'Directory containing AVI files:',
-            validate: (v) => v.trim() !== '' || 'Directory is required',
-        });
-        const output = await input({
-            message: 'Output filename:',
-            default: 'joined_video.avi',
-        });
-        await runJoin(directory, output);
+    const files = await browseAndPickFiles('Pick videos to join:', listVideoFiles);
+    if (files.length === 0) {
+        console.log(chalk.yellow('  No files selected.'));
         return;
     }
-
-    const output = await input({
-        message: 'Output filename:',
-        default: 'joined_video.avi',
-    });
-    await runJoin(filesToJoin, output);
+    const output = await input({ message: 'Output filename:', default: 'joined_video.avi' });
+    await runJoin(files, output);
 }
 
 async function promptConvert() {
-    const collection = getCollection();
-    let file: string;
-
-    if (collection.length > 0) {
-        const choice = await select({
-            message: 'Which file would you like to convert?',
-            choices: [
-                ...collection.map(f => ({ name: path.basename(f), value: f })),
-                new Separator(),
-                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
-            ] as any,
-        });
-
-        if (choice === '__MANUAL__') {
-            file = await input({
-                message: 'Input video file:',
-                validate: (v) => v.trim() !== '' || 'File is required',
-            });
-        } else {
-            file = choice as string;
-        }
-    } else {
-        file = await input({
-            message: 'Input video file:',
-            validate: (v) => v.trim() !== '' || 'File is required',
-        });
-    }
-
+    const file = await browseAndPickFile('Pick a video to convert:', listVideoFiles);
     const output = await input({ message: 'Output filename (leave blank for auto):' });
     await runConvert(file, output || undefined);
 }
 
 async function promptAudio() {
-    const collection = getCollection();
-    let file: string;
-
-    if (collection.length > 0) {
-        const choice = await select({
-            message: 'Which file would you like to process?',
-            choices: [
-                ...collection.map(f => ({ name: path.basename(f), value: f })),
-                new Separator(),
-                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
-            ] as any,
-        });
-
-        if (choice === '__MANUAL__') {
-            file = await input({
-                message: 'Input video file:',
-                validate: (v) => v.trim() !== '' || 'File is required',
-            });
-        } else {
-            file = choice as string;
-        }
-    } else {
-        file = await input({
-            message: 'Input video file:',
-            validate: (v) => v.trim() !== '' || 'File is required',
-        });
-    }
+    const file = await browseAndPickFile('Pick a video to process:', listVideoFiles);
 
     const mode = await select({
         message: 'What would you like to do?',
@@ -322,53 +277,21 @@ async function promptAudio() {
 }
 
 function validateTime(v: string): true | string {
-    // Accept HH:MM:SS, MM:SS, or plain seconds (integers / decimals)
     if (/^\d+(\.\d+)?$/.test(v.trim())) return true;
     if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())) return true;
     return 'Enter a valid time: HH:MM:SS, MM:SS, or seconds (e.g. 90)';
 }
 
 async function promptExtract() {
-    const collection = getCollection();
-    let file: string;
-
-    if (collection.length > 0) {
-        const choice = await select({
-            message: 'Which file would you like to extract from?',
-            choices: [
-                ...collection.map(f => ({ name: path.basename(f), value: f })),
-                new Separator(),
-                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
-            ] as any,
-        });
-
-        if (choice === '__MANUAL__') {
-            file = await input({
-                message: 'Input video file:',
-                validate: (v) => v.trim() !== '' || 'File is required',
-            });
-        } else {
-            file = choice as string;
-        }
-    } else {
-        file = await input({
-            message: 'Input video file:',
-            validate: (v) => v.trim() !== '' || 'File is required',
-        });
-    }
+    const file = await browseAndPickFile('Pick a video to extract from:', listVideoFiles);
 
     const startTime = await input({
         message: 'Start time (HH:MM:SS, MM:SS, or seconds):',
         validate: validateTime,
     });
-
     const endTime = await input({
         message: 'End time   (HH:MM:SS, MM:SS, or seconds):',
-        validate: (v) => {
-            const basic = validateTime(v);
-            if (basic !== true) return basic;
-            return true; // further range check is left to ffmpeg
-        },
+        validate: validateTime,
     });
 
     const output = await input({ message: 'Output filename (leave blank for auto):' });
@@ -376,33 +299,7 @@ async function promptExtract() {
 }
 
 async function promptSpeed() {
-    const collection = getCollection();
-    let file: string;
-
-    if (collection.length > 0) {
-        const choice = await select({
-            message: 'Which file would you like to modify?',
-            choices: [
-                ...collection.map(f => ({ name: path.basename(f), value: f })),
-                new Separator(),
-                { name: chalk.dim('✏️   Enter path manually'), value: '__MANUAL__' },
-            ] as any,
-        });
-
-        if (choice === '__MANUAL__') {
-            file = await input({
-                message: 'Input video file:',
-                validate: (v) => v.trim() !== '' || 'File is required',
-            });
-        } else {
-            file = choice as string;
-        }
-    } else {
-        file = await input({
-            message: 'Input video file:',
-            validate: (v) => v.trim() !== '' || 'File is required',
-        });
-    }
+    const file = await browseAndPickFile('Pick a video to modify:', listVideoFiles);
 
     const speedStr = await input({
         message: 'Playback speed (e.g. 0.5 for half speed, 2.0 for double speed):',
@@ -412,17 +309,13 @@ async function promptSpeed() {
             return true;
         },
     });
-    const speed = parseFloat(speedStr);
 
     const output = await input({ message: 'Output filename (leave blank for auto):' });
-    await runSpeed(file, speed, output || undefined);
+    await runSpeed(file, parseFloat(speedStr), output || undefined);
 }
 
 async function promptImageToVideo() {
-    const file = await input({
-        message: 'Image file (PNG or JPEG):',
-        validate: (v) => v.trim() !== '' || 'File is required',
-    });
+    const file = await browseAndPickFile('Pick an image:', listImageFiles, '🖼️');
 
     const durationStr = await input({
         message: 'Video duration in seconds (e.g. 5, 10.5):',
@@ -432,10 +325,9 @@ async function promptImageToVideo() {
             return true;
         },
     });
-    const duration = parseFloat(durationStr);
 
     const output = await input({ message: 'Output filename (leave blank for auto):' });
-    await runImageToVideo(file, duration, output || undefined);
+    await runImageToVideo(file, parseFloat(durationStr), output || undefined);
 }
 
 // ─── Main interactive loop ────────────────────────────────────────────────────
@@ -444,32 +336,18 @@ async function interactiveMode() {
     printBanner();
 
     while (true) {
-        printCollectionStatus();
-
-        const collection = getCollection();
         const choices: any[] = [
-            { name: '📁  Browse & pick videos', value: 'browse' },
-            new Separator(),
             { name: '📂  Join videos', value: 'join' },
             { name: '✂️   Extract clip', value: 'extract' },
             { name: '⏩  Modify playback speed', value: 'speed' },
             { name: '🖼️   Create video from image', value: 'image' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
             { name: '▶️   Convert to YouTube format', value: 'convert' },
+            new Separator(),
+            { name: '🚪  Exit', value: 'exit' },
         ];
 
-        if (collection.length > 0) {
-            choices.push(new Separator());
-            choices.push({ name: chalk.red('🗑️   Clear working collection'), value: 'clear' });
-        }
-
-        choices.push(new Separator());
-        choices.push({ name: '🚪  Exit', value: 'exit' });
-
-        const action = await select({
-            message: 'What would you like to do?',
-            choices,
-        });
+        const action = await select({ message: 'What would you like to do?', choices });
 
         if (action === 'exit') {
             console.log(chalk.dim('\n  Goodbye!\n'));
@@ -478,17 +356,12 @@ async function interactiveMode() {
 
         console.log();
 
-        if (action === 'browse') await browseAndPickVideos();
-        else if (action === 'join') await promptJoin();
+        if (action === 'join') await promptJoin();
         else if (action === 'extract') await promptExtract();
         else if (action === 'speed') await promptSpeed();
         else if (action === 'image') await promptImageToVideo();
         else if (action === 'convert') await promptConvert();
         else if (action === 'audio') await promptAudio();
-        else if (action === 'clear') {
-            clearCollection();
-            console.log(chalk.yellow('  🗑️  Working collection cleared.'));
-        }
 
         console.log();
     }
