@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
@@ -30,6 +31,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/fluent-ffmpeg": "^2.1.28"
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "vitest": "^4.1.8"
   }
 }

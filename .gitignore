@@ -1,7 +1,10 @@
 node_modules
 data
+images
 out
 .DS_Store
 *.mp4
 *.avi
 music
+yt-desc.txt
+.scratch/

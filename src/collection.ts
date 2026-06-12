@@ -4,6 +4,12 @@ import * as path from 'path';
 const VIDEO_EXTENSIONS = new Set(['.avi', '.mp4', '.mov', '.mkv', '.m4v', '.wmv', '.flv', '.webm', '.mts', '.m2ts']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif']);
 
+export interface IFileCollection {
+    listVideoFiles(dir: string): string[];
+    listImageFiles(dir: string): string[];
+    listSubdirectories(dir: string): string[];
+}
+
 export function isVideoFile(filePath: string): boolean {
     return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
@@ -49,3 +55,9 @@ export function listSubdirectories(dir: string): string[] {
         return [];
     }
 }
+
+export const fileCollection: IFileCollection = {
+    listVideoFiles,
+    listImageFiles,
+    listSubdirectories,
+};

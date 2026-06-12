@@ -16,6 +16,16 @@ export interface VideoInfo {
     duration: number;
 }
 
+export interface IVideoProcessor {
+    getVideoInfo(filePath: string): Promise<VideoInfo>;
+    joinVideos(directoryOrFiles: string | string[], output: string, target?: { width: number; height: number }): Promise<void>;
+    convertToYouTube(input: string, output: string): Promise<void>;
+    processAudio(input: string, output: string, audioFiles?: string[]): Promise<void>;
+    extractClip(input: string, startTime: string, endTime: string, output: string): Promise<void>;
+    changeSpeed(input: string, output: string, speed: number): Promise<void>;
+    imageToVideo(imagePath: string, duration: number, output: string): Promise<void>;
+}
+
 export async function getVideoInfo(filePath: string): Promise<VideoInfo> {
     const data = await probeFile(filePath);
     const vs = data.streams.find((s: any) => s.codec_type === 'video');
@@ -277,3 +287,13 @@ export async function imageToVideo(
             .save(output);
     });
 }
+
+export const videoProcessor: IVideoProcessor = {
+    getVideoInfo,
+    joinVideos,
+    convertToYouTube,
+    processAudio,
+    extractClip,
+    changeSpeed,
+    imageToVideo,
+};
