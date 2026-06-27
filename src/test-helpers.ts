@@ -25,6 +25,7 @@ export function makeCtx(): { ctx: AppContext; spinner: ISpinner } {
         collection: {
             listVideoFiles: vi.fn().mockReturnValue([]),
             listImageFiles: vi.fn().mockReturnValue([]),
+            listTextFiles: vi.fn().mockReturnValue([]),
             listSubdirectories: vi.fn().mockReturnValue([]),
         },
         ora: vi.fn().mockReturnValue(spinner),

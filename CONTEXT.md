@@ -19,4 +19,10 @@ The interactive TUI layer of a command — uses `@inquirer/prompts` to gather us
 `IOra` is the type of the `ctx.ora` factory: `(text: string) => ISpinner`. `ISpinner` covers the `start`, `succeed`, `fail`, and `stop` methods used by `run*` functions. Both are defined in `src/context.ts`. The real `defaultContext` wraps the `ora` npm package; tests pass a `vi.fn()` stub.
 
 ## command
-A single editor operation (join, convert, extract, audio, speed, image). Each lives in `src/commands/<name>/` with `run.ts`, `prompt.ts`, `index.ts`, and `__tests__/run.test.ts`.
+A single editor operation (join, convert, extract, bulk-extract, audio, speed, image). Each lives in `src/commands/<name>/` with `run.ts`, `prompt.ts`, `index.ts`, and `__tests__/run.unit.test.ts`.
+
+## BulkClip
+A single extraction job parsed from a bulk text file: `{ videoPath: string; startTime: string; endTime: string }`. Produced by `parseBulkFile` and consumed by `runBulkExtract`.
+
+## bulk file
+A plain-text file listing one or more video paths, each followed by time-range lines in `<start>-<end>` format. Blank lines are skipped. Trailing text after the end time is treated as a comment and ignored.

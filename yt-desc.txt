@@ -1,8 +1,6 @@
-Equipment
 ----------------------------------------
-Betafpv Air75 Brushless Whoop Quadcopter
+Betafpv Air75 Brushless Whoop Quadcopter w Gemfan props
 Radiomaster Pocket
-EMAX Transporter 2
-Cherry II 
+EMAX Transporter 2 w Cherry II
 GEPRC WooPower W63
-Betafpv Lava II 580 & 480mah
+Betafpv Lava II 580, 480, 320mah

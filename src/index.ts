@@ -10,6 +10,7 @@ import { runExtract, promptExtract } from './commands/extract';
 import { runAudio, promptAudio } from './commands/audio';
 import { runSpeed, promptSpeed } from './commands/speed';
 import { runImageToVideo, promptImageToVideo } from './commands/image';
+import { runBulkExtract, promptBulkExtract } from './commands/bulk-extract';
 
 // ─── Main interactive loop ────────────────────────────────────────────────────
 
@@ -20,10 +21,12 @@ async function interactiveMode(ctx: AppContext = defaultContext) {
         const choices: any[] = [
             { name: '📂  Join videos', value: 'join' },
             { name: '✂️   Extract clip', value: 'extract' },
+            { name: '✂️   Bulk extract clips', value: 'bulk-extract' },
             { name: '⏩  Modify playback speed', value: 'speed' },
-            { name: '🖼️   Create video from image', value: 'image' },
+            { name: '🖼️  Create video from image', value: 'image' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
-            { name: '▶️   Convert to YouTube format', value: 'convert' },
+            
+            { name: '▶️  Convert to YouTube format', value: 'convert' },
             new Separator(),
             { name: '🚪  Exit', value: 'exit' },
         ];
@@ -43,6 +46,7 @@ async function interactiveMode(ctx: AppContext = defaultContext) {
         else if (action === 'image') await promptImageToVideo(ctx);
         else if (action === 'convert') await promptConvert(ctx);
         else if (action === 'audio') await promptAudio(ctx);
+        else if (action === 'bulk-extract') await promptBulkExtract(ctx);
 
         console.log();
     }
@@ -104,6 +108,14 @@ program
     .option('-o, --output <filename>', 'Output filename')
     .action(async (file, factor, options) => {
         await runSpeed(file, parseFloat(factor), options.output);
+    });
+
+program
+    .command('bulk-extract')
+    .description('Extract multiple clips from a bulk text file')
+    .argument('<file>', 'Path to bulk text file')
+    .action(async (file) => {
+        await runBulkExtract(file);
     });
 
 program

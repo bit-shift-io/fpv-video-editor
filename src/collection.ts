@@ -7,6 +7,7 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.ti
 export interface IFileCollection {
     listVideoFiles(dir: string): string[];
     listImageFiles(dir: string): string[];
+    listTextFiles(dir: string): string[];
     listSubdirectories(dir: string): string[];
 }
 
@@ -42,6 +43,20 @@ export function listImageFiles(dir: string): string[] {
     }
 }
 
+export function listTextFiles(dir: string): string[] {
+    try {
+        return fs.readdirSync(dir)
+            .filter(f => {
+                const full = path.join(dir, f);
+                return fs.statSync(full).isFile() && path.extname(f).toLowerCase() === '.txt';
+            })
+            .sort()
+            .map(f => path.join(dir, f));
+    } catch {
+        return [];
+    }
+}
+
 export function listSubdirectories(dir: string): string[] {
     try {
         return fs.readdirSync(dir)
@@ -59,5 +74,6 @@ export function listSubdirectories(dir: string): string[] {
 export const fileCollection: IFileCollection = {
     listVideoFiles,
     listImageFiles,
+    listTextFiles,
     listSubdirectories,
 };
