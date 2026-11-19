@@ -24,6 +24,16 @@ describe('runAudio', () => {
         );
     });
 
+    it('keeps the input extension in the auto-generated output name', async () => {
+        const { ctx } = makeCtx();
+        await runAudio('clip.mp4', undefined, undefined, ctx);
+        expect(ctx.processor.processAudio).toHaveBeenCalledWith(
+            path.resolve('clip.mp4'),
+            path.resolve('clip_processed.mp4'),
+            undefined,
+        );
+    });
+
     it('passes replace array through to processor', async () => {
         const { ctx } = makeCtx();
         const replace = ['/music/track.mp3'];

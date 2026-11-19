@@ -153,33 +153,29 @@ export async function processAudio(input: string, output: string, audioFiles?: s
     return new Promise((resolve, reject) => {
         const command = ffmpeg(input) as any;
 
+        // Stream-copy the video: re-encoding (e.g. H.264 -> MJPEG) bloats the file and loses quality.
         if (!audioFiles || audioFiles.length === 0) {
-            command.noAudio();
+            command.outputOptions(['-map 0:v', '-c:v copy', '-an']);
         } else {
-            // Add new audio files
             audioFiles.forEach(audio => {
                 command.input(audio).inputOptions(['-stream_loop', '-1']);
             });
-
-            // For simplicity, we'll just use the first audio file and loop it or truncate it
+            // Only the first audio file is used, looped or truncated to the video length.
+            // AVI keeps PCM for compatibility with the original FPV files; MP4 etc. can't hold PCM.
+            const audioCodec = output.toLowerCase().endsWith('.avi') ? 'pcm_s16le' : 'aac';
             command.outputOptions([
                 '-map 0:v:0',
                 '-map 1:a:0',
-                '-shortest'
+                '-c:v copy',
+                `-c:a ${audioCodec}`,
+                '-shortest',
             ]);
         }
 
         command
-            // Use MJPEG and PCM for consistency and speed (AVI format)
-            .videoCodec('mjpeg')
             .on('error', (err: any) => reject(new Error(err)))
-            .on('end', () => resolve());
-
-        if (audioFiles && audioFiles.length > 0) {
-            command.audioCodec('pcm_s16le');
-        }
-
-        command.save(output);
+            .on('end', () => resolve())
+            .save(output);
     });
 }
 

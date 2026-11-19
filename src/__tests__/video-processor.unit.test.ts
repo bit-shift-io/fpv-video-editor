@@ -2,10 +2,11 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('fluent-ffmpeg');
 import ffmpeg from 'fluent-ffmpeg';
-import { extractClip, frameVideo } from '../video-processor';
+import { extractClip, frameVideo, processAudio } from '../video-processor';
 
 function makeMockChain() {
     const chain: any = {
+        input: vi.fn().mockReturnThis(),
         inputOptions: vi.fn().mockReturnThis(),
         outputOptions: vi.fn().mockReturnThis(),
         on: vi.fn().mockImplementation((event: string, cb: () => void) => {
@@ -73,5 +74,34 @@ describe('frameVideo', () => {
         await frameVideo('clip.avi', 'bg.jpg', 'out.mp4', 1920, 1080, 1440, 1080);
         const outputOptions: string[] = mockChain.outputOptions.mock.calls.flat(2);
         expect(outputOptions.some(o => o.includes('0:a'))).toBe(false);
+    });
+});
+
+describe('processAudio', () => {
+    let mockChain: ReturnType<typeof makeMockChain>;
+
+    beforeEach(() => {
+        mockChain = makeMockChain();
+        vi.mocked(ffmpeg).mockReturnValue(mockChain);
+    });
+
+    const opts = () => mockChain.outputOptions.mock.calls.flat(2) as string[];
+
+    it('strips audio by stream-copying video without re-encoding', async () => {
+        await processAudio('in.mp4', 'out.mp4');
+        expect(opts()).toEqual(expect.arrayContaining(['-c:v copy', '-an']));
+    });
+
+    it('stream-copies video when replacing audio', async () => {
+        await processAudio('in.mp4', 'out.mp4', ['track.mp3']);
+        expect(opts()).toContain('-c:v copy');
+    });
+
+    it.each([
+        ['out.mp4', '-c:a aac'],
+        ['out.avi', '-c:a pcm_s16le'],
+    ])('encodes replacement audio for %s with %s', async (output, codec) => {
+        await processAudio('in.avi', output, ['track.mp3']);
+        expect(opts()).toContain(codec);
     });
 });

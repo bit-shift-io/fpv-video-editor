@@ -9,7 +9,7 @@ export async function runAudio(
     ctx: AppContext = defaultContext,
 ): Promise<void> {
     const inputPath = path.resolve(file);
-    const outputPath = path.resolve(output || file.replace(/\.[^/.]+$/, '') + '_processed.avi');
+    const outputPath = path.resolve(output || file.replace(/(\.[^/.]+)?$/, (ext) => `_processed${ext || '.avi'}`));
     const action = replace && replace.length > 0 ? 'Replacing audio' : 'Stripping audio';
     const spinner = ctx.ora(chalk.blue(`${action} in ${path.basename(file)}...`)).start();
     try {
