@@ -24,6 +24,7 @@ export interface IVideoProcessor {
     extractClip(input: string, startTime: string, endTime: string, output: string): Promise<void>;
     changeSpeed(input: string, output: string, speed: number): Promise<void>;
     imageToVideo(imagePath: string, duration: number, output: string): Promise<void>;
+    frameVideo(video: string, background: string, output: string, outW: number, outH: number, clipW: number, clipH: number): Promise<void>;
 }
 
 export async function getVideoInfo(filePath: string): Promise<VideoInfo> {
@@ -274,6 +275,52 @@ export async function imageToVideo(
     });
 }
 
+
+/**
+ * Places a clip, scaled to clipW×clipH, centred over a background image that
+ * covers an outW×outH frame. Output is H.264 MP4 at the clip's frame rate,
+ * with the clip's audio as AAC when it has any. Ends when the clip ends.
+ */
+export async function frameVideo(
+    video: string,
+    background: string,
+    output: string,
+    outW: number,
+    outH: number,
+    clipW: number,
+    clipH: number,
+): Promise<void> {
+    const probe = await probeFile(video);
+    const vs = probe.streams.find((s: any) => s.codec_type === 'video');
+    const hasAudio = probe.streams.some((s: any) => s.codec_type === 'audio');
+    const frameRate = vs?.r_frame_rate || '30';
+
+    const filter =
+        `[1:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},setsar=1[bg];` +
+        `[0:v]scale=${clipW}:${clipH},setsar=1[fg];` +
+        `[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[v]`;
+
+    return new Promise((resolve, reject) => {
+        (ffmpeg() as any)
+            .input(video)
+            .input(background)
+            .inputOptions(['-loop 1', `-framerate ${frameRate}`])
+            .complexFilter(filter)
+            .outputOptions([
+                '-map [v]',
+                ...(hasAudio ? ['-map 0:a', '-c:a aac', '-b:a 192k'] : []),
+                '-c:v libx264',
+                '-crf 23',
+                '-preset medium',
+                '-movflags +faststart',
+                '-shortest',
+            ])
+            .on('error', (err: any) => reject(new Error(err.message ?? err)))
+            .on('end', () => resolve())
+            .save(output);
+    });
+}
+
 export const videoProcessor: IVideoProcessor = {
     getVideoInfo,
     joinVideos,
@@ -282,4 +329,5 @@ export const videoProcessor: IVideoProcessor = {
     extractClip,
     changeSpeed,
     imageToVideo,
+    frameVideo,
 };

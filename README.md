@@ -7,6 +7,7 @@ A simple TypeScript-based CLI tool to process and join AVI files for YouTube upl
 1. **Join Videos**: Combine all `.avi` files in a directory into a single MP4.
 2. **Convert for YouTube**: Convert AVI files to YouTube-optimized MP4 (H.264/AAC).
 3. **Audio Management**: Strip audio from a video or replace it with background music.
+4. **Frame Video**: Place a small clip centred over a background image at 720p or 1080p.
 
 ## Prerequisites
 
@@ -46,6 +47,16 @@ npx ts-node src/index.ts audio ./full_session.mp4
 ```bash
 npx ts-node src/index.ts audio ./full_session.mp4 -r ./music/music.mp3
 ```
+
+### 5. Frame a clip over a background image
+```bash
+npx ts-node src/index.ts frame ./joined_video.avi ./background.jpg --res 1080 --size maximum
+```
+- `--res`: `720` (1280×720) or `1080` (1920×1080).
+- `--size`: `original` (clip unchanged), `maximum` (largest fit), or `halfway` (between the two).
+- The background is scaled to cover the frame and centre-cropped.
+- Output defaults to `<clip>_<res>p.mp4` beside the clip; override with `-o`.
+- A clip larger than the chosen output aborts with a message and writes nothing.
 
 ## Developer notes
 

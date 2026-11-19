@@ -21,6 +21,7 @@ export function makeCtx(): { ctx: AppContext; spinner: ISpinner } {
             extractClip: vi.fn().mockResolvedValue(undefined),
             changeSpeed: vi.fn().mockResolvedValue(undefined),
             imageToVideo: vi.fn().mockResolvedValue(undefined),
+            frameVideo: vi.fn().mockResolvedValue(undefined),
         },
         collection: {
             listVideoFiles: vi.fn().mockReturnValue([]),

@@ -9,6 +9,8 @@ import { runConvert, promptConvert } from './commands/convert';
 import { runExtract, promptExtract } from './commands/extract';
 import { runAudio, promptAudio } from './commands/audio';
 import { runSpeed, promptSpeed } from './commands/speed';
+import { runFrameVideo, promptFrameVideo } from './commands/frame';
+import { FRAME_SIZES, FrameSize } from './commands/frame/sizes';
 import { runImageToVideo, promptImageToVideo } from './commands/image';
 import { runBulkExtract, promptBulkExtract } from './commands/bulk-extract';
 
@@ -24,6 +26,7 @@ async function interactiveMode(ctx: AppContext = defaultContext) {
             { name: '✂️   Bulk extract clips', value: 'bulk-extract' },
             { name: '⏩  Modify playback speed', value: 'speed' },
             { name: '🖼️  Create video from image', value: 'image' },
+            { name: '🖼️  Frame video on background', value: 'frame' },
             { name: '🔇  Strip / replace audio', value: 'audio' },
             
             { name: '▶️  Convert to YouTube format', value: 'convert' },
@@ -44,6 +47,7 @@ async function interactiveMode(ctx: AppContext = defaultContext) {
         else if (action === 'extract') await promptExtract(ctx);
         else if (action === 'speed') await promptSpeed(ctx);
         else if (action === 'image') await promptImageToVideo(ctx);
+        else if (action === 'frame') await promptFrameVideo(ctx);
         else if (action === 'convert') await promptConvert(ctx);
         else if (action === 'audio') await promptAudio(ctx);
         else if (action === 'bulk-extract') await promptBulkExtract(ctx);
@@ -108,6 +112,29 @@ program
     .option('-o, --output <filename>', 'Output filename')
     .action(async (file, factor, options) => {
         await runSpeed(file, parseFloat(factor), options.output);
+    });
+
+program
+    .command('frame')
+    .description('Place a clip centred over a background image at 720p or 1080p')
+    .argument('<video>', 'Input video file')
+    .argument('<background>', 'Background image')
+    .requiredOption('--res <res>', 'Output resolution: 720 or 1080')
+    .requiredOption('--size <size>', 'Clip size: original, halfway or maximum')
+    .option('-o, --output <filename>', 'Output filename')
+    .action(async (video, background, options) => {
+        const res = Number(options.res);
+        if (res !== 720 && res !== 1080) {
+            console.error(chalk.red(`--res must be 720 or 1080, got "${options.res}"`));
+            process.exitCode = 1;
+            return;
+        }
+        if (!FRAME_SIZES.includes(options.size)) {
+            console.error(chalk.red(`--size must be one of ${FRAME_SIZES.join(', ')}, got "${options.size}"`));
+            process.exitCode = 1;
+            return;
+        }
+        await runFrameVideo(video, background, res, options.size as FrameSize, options.output);
     });
 
 program

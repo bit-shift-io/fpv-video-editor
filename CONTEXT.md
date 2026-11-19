@@ -26,3 +26,9 @@ A single extraction job parsed from a bulk text file: `{ videoPath: string; star
 
 ## bulk file
 A plain-text file listing one or more video paths, each followed by time-range lines in `<start>-<end>` format. Blank lines are skipped. Trailing text after the end time is treated as a comment and ignored.
+
+## Frame command
+Places a clip centred over a background image at a 720p or 1080p 16:9 output. The background covers the frame (scaled, centre-cropped). Not a general compositor: centre position only.
+
+## Frame size
+How large the clip is drawn in a frame command: `original` (unchanged), `maximum` (largest fit preserving aspect ratio), or `halfway` (midpoint of the two, even-rounded). A clip larger than the output is an error, not a frame size.
